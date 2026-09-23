@@ -89,7 +89,9 @@ CAB.send=send;
 
 function dispatch(m){
   switch(m.t){
-    case "welcome": CAB.me.id=m.id; if(m.welcome){CAB.welcome=m.welcome;} break;
+    case "welcome": CAB.me.id=m.id;
+      if(m.name){ if(m.name!==CAB.me.name){ toast("that name was taken — you're now “"+m.name+"”"); } CAB.me.name=m.name; save("name",m.name); syncBar(); }
+      if(m.welcome){CAB.welcome=m.welcome;} break;
     case "presence": CAB.presence=m.users||[]; syncBar(); if(CAB.tab==="admin"||CAB.tab==="versus") renderView(); if(CAB.host) refreshRoomBadge(); break;
     case "chatlog": CAB.chat=m.items||[]; if(CAB.tab==="chat") renderView(); break;
     case "chat":

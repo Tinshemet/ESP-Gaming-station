@@ -514,7 +514,7 @@ mount(stage, ctx){
     const used = row+1;
     if(won){ finish(true, used); }
     else if(used>=ROWS){ finish(false, used); }
-    else { row++; cur=""; }
+    else { row++; cur=""; hudLive(); }
   }
   function evaluate(guess){
     const res=new Array(COLS).fill(0), ans=answer.split(""), counts={};

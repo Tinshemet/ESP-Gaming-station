@@ -16,7 +16,7 @@ mount(stage, ctx){
   function setSide(){ amP=duel.indexOf(ctx.me.id)>=0; side=(duel[0]===ctx.me.id)?0:1; }
   function place(rope){ const pct=Math.max(0,Math.min(100,(rope+goal)/(2*goal)*100)); knot.style.left="calc("+pct+"% - 8px)"; }
   function fire(){ if(active&&amP) ctx.net.send({ev:"pull"}); }
-  pull.addEventListener("click",fire);
+  pull.addEventListener("pointerdown",e=>{ e.preventDefault(); fire(); });
   const key=e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); fire(); } };
   window.addEventListener("keydown",key);
   ctx.net.on(m=>{

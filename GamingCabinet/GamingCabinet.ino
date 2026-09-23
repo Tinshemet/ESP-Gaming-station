@@ -46,6 +46,7 @@ void broadcast(JsonDocument& d, const char* room=nullptr){
   for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && (!room || strcmp(cl[i].room,room)==0)) ws.sendTXT(i, s);
 }
 int idToNum(uint32_t id){ for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].id==id) return i; return -1; }
+bool nameTaken(const char* name, int except){ for(int i=0;i<MAXCL;i++) if(i!=except && cl[i].used && cl[i].ready && !strcmp(cl[i].name,name)) return true; return false; }
 
 void sendPresence(){
   JsonDocument d; d["t"]="presence"; JsonArray a=d["users"].to<JsonArray>();
@@ -90,16 +91,19 @@ void submitScore(int num, const char* game, int32_t sc, bool lo){ if(!game[0]) r
 
 // ---------- generic relay games (logic lives in the JS clients) ----------
 bool relayGame(const char* g){ return !strcmp(g,"ttt")||!strcmp(g,"battleship")||!strcmp(g,"dots")||!strcmp(g,"trivia")||!strcmp(g,"speedmath")||!strcmp(g,"potato"); }
-void relaySeats(const char* room){ JsonDocument d; d["t"]="net"; d["game"]=room; d["ev"]="seats";
-  JsonArray a=d["players"].to<JsonArray>(); int cnt=0;
-  for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && !strcmp(cl[i].room,room)){ JsonObject o=a.add<JsonObject>(); o["id"]=cl[i].id; o["name"]=cl[i].name; cnt++; }
-  d["have"]=cnt; broadcast(d,room); }
+void relaySeats(const char* room){   // players ordered by join time (id) so seats stay stable when others join/leave
+  int idx[MAXCL], n=0;
+  for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && !strcmp(cl[i].room,room)) idx[n++]=i;
+  for(int i=1;i<n;i++){ int k=idx[i], j=i-1; while(j>=0 && cl[idx[j]].id>cl[k].id){ idx[j+1]=idx[j]; j--; } idx[j+1]=k; }
+  JsonDocument d; d["t"]="net"; d["game"]=room; d["ev"]="seats"; JsonArray a=d["players"].to<JsonArray>();
+  for(int i=0;i<n;i++){ JsonObject o=a.add<JsonObject>(); o["id"]=cl[idx[i]].id; o["name"]=cl[idx[i]].name; }
+  d["have"]=n; broadcast(d,room); }
 
 // ---------- Quick-Draw ----------
 void qdFindDuelists(){
   qd.p1=qd.p2=-1;
   for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && strcmp(cl[i].room,"quickdraw")==0){
-    if(qd.p1<0) qd.p1=i; else if(qd.p2<0){ qd.p2=i; break; }
+    if(qd.p1<0 || cl[i].id<cl[qd.p1].id){ qd.p2=qd.p1; qd.p1=i; } else if(qd.p2<0 || cl[i].id<cl[qd.p2].id){ qd.p2=i; }
   }
 }
 void qdSendRound(const char* ev){
@@ -145,11 +149,13 @@ void qdTick(){
   }
 }
 // ---------- shared helpers for the other duels ----------
-int findDuel(const char* room, int& a, int& b){ a=b=-1; int n=0;
-  for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && !strcmp(cl[i].room,room)){ if(a<0)a=i; else if(b<0)b=i; n++; }
+int findDuel(const char* room, int& a, int& b){ a=b=-1; int n=0;   // two earliest joiners (lowest id) = stable duelists
+  for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && !strcmp(cl[i].room,room)){ n++;
+    if(a<0 || cl[i].id<cl[a].id){ b=a; a=i; } else if(b<0 || cl[i].id<cl[b].id){ b=i; } }
   return n; }
 int countRoom(const char* room){ int n=0; for(int i=0;i<MAXCL;i++) if(cl[i].used && cl[i].ready && !strcmp(cl[i].room,room)) n++; return n; }
 void sendWait(const char* game){ JsonDocument d; d["t"]="net"; d["game"]=game; d["ev"]="wait"; d["have"]=countRoom(game); broadcast(d,game); }
+void sendWaitTo(int num, const char* game){ JsonDocument d; d["t"]="net"; d["game"]=game; d["ev"]="wait"; d["have"]=countRoom(game); sendJson(num,d); }
 
 // ---------- Rock-Paper-Scissors (first to 3) ----------
 struct RPSs{ int p1=-1,p2=-1; char c1=0,c2=0; int s1=0,s2=0; int phase=0; uint32_t t=0; } rps;
@@ -250,12 +256,11 @@ void royTick(){ int n=countRoom("royale"); uint32_t now=millis();
 }
 
 // send the current snapshot of a room to everyone in it (used when someone joins)
-void gameOnJoin(const char* room){
-  if(!strcmp(room,"quickdraw")) qdSendWait();
-  else if(!strcmp(room,"rps"))  sendWait("rps");
-  else if(!strcmp(room,"tug"))  sendWait("tug");
-  else if(!strcmp(room,"c4"))   { if(c4.phase==1||c4.phase==2) c4Send("state"); else sendWait("c4"); }
-  else if(!strcmp(room,"royale")) sendWait("royale");
+// Tell ONLY the joining client the current state — never broadcast a reset to a room
+// that already has an active duel (that was booting the 2 players when a 3rd joined).
+void gameOnJoin(int num, const char* room){
+  if(!strcmp(room,"quickdraw")||!strcmp(room,"rps")||!strcmp(room,"tug")||!strcmp(room,"royale")) sendWaitTo(num,room);
+  else if(!strcmp(room,"c4")){ if(c4.phase==1||c4.phase==2) c4Send("state"); else sendWaitTo(num,"c4"); }
   else if(relayGame(room)) relaySeats(room);
 }
 
@@ -270,9 +275,12 @@ void onText(int num, uint8_t* payload, size_t len){
   Peer& c = cl[num];
 
   if(!strcmp(t,"hello")){
-    strncpy(c.name, d["name"] | "guest", 17); c.name[17]=0; if(!c.name[0]) strcpy(c.name,"guest");
+    char base[18]; strncpy(base, d["name"] | "guest", 17); base[17]=0; if(!base[0]) strcpy(base,"guest");
+    char nm[20]; strncpy(nm, base, 17); nm[17]=nm[18]=nm[19]=0;
+    for(int sfx=2; nameTaken(nm, num) && sfx<100; sfx++) snprintf(nm, sizeof(nm), "%.14s%d", base, sfx);
+    strncpy(c.name, nm, 17); c.name[17]=0;
     c.ready=true; c.room[0]=0;
-    JsonDocument w; w["t"]="welcome"; w["id"]=c.id; w["welcome"]=welcomeTxt; sendJson(num,w);
+    JsonDocument w; w["t"]="welcome"; w["id"]=c.id; w["name"]=c.name; w["welcome"]=welcomeTxt; sendJson(num,w);
     sendChatlog(num); sendPresence(); sendLeaders(num);
   }
   else if(!strcmp(t,"chat")){
@@ -284,7 +292,7 @@ void onText(int num, uint8_t* payload, size_t len){
   }
   else if(!strcmp(t,"join")){
     strncpy(c.room, d["game"] | "", 15); c.room[15]=0; sendPresence();
-    gameOnJoin(c.room);
+    gameOnJoin(num, c.room);
   }
   else if(!strcmp(t,"leave")){ char old[16]; strncpy(old,c.room,15); old[15]=0; c.room[0]=0; sendPresence(); if(relayGame(old)) relaySeats(old); }
   else if(!strcmp(t,"net")){

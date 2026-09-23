@@ -8,7 +8,7 @@ mount(stage, ctx){
   const cv=document.createElement("canvas");
   const msg=ctx.el("div",{style:"position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(11,15,20,.84);text-align:center"});
   const msgScore=ctx.el("div",{class:"hud",style:"font-size:15px"});
-  msg.append(ctx.el("div",{class:"big-msg",style:"color:var(--grn)",text:"LIGHTS OUT"}), msgScore,
+  msg.append(ctx.el("div",{class:"big-msg",style:"color:var(--grn)",text:"✓ CLEARED!"}), msgScore,
     ctx.el("button",{class:"btn grn",text:"↺ NEW GAME",onclick:()=>reset()}));
   board.append(cv, msg);
   const ctrls=ctx.el("div",{class:"ctrls"});
