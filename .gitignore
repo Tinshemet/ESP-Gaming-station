@@ -1,0 +1,13 @@
+# generated build artifacts (bundle.sh regenerates these; flash-cabinet.sh runs it)
+dist/
+GamingCabinet/webassets.h
+
+# arduino / esptool build output
+build/
+*.elf
+*.map
+*.partitions.bin
+
+# os cruft
+.DS_Store
+Thumbs.db
