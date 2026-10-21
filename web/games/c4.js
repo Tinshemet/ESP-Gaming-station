@@ -20,8 +20,8 @@ mount(stage, ctx){
     duel=m.duel||duel; names=m.names||names; myDisc = duel[0]===ctx.me.id?1 : duel[1]===ctx.me.id?2 : 0;
     render(m.board||"0".repeat(42));
     if(m.ev==="draw"){ over=true; myTurn=false; info.style.color="var(--yel)"; info.textContent="draw — board full"; sub.textContent="new game shortly…"; return; }
-    if(m.winnerId){ over=true; myTurn=false; const iWon=m.winnerId===ctx.me.id;
-      if(iWon && myDisc) ctx.reportWin();
+    if(m.winnerId){ const was=over; over=true; myTurn=false; const iWon=m.winnerId===ctx.me.id;
+      if(iWon && myDisc && !was) ctx.reportWin();     // once per game, not per repeated end-screen snapshot
       info.style.color=iWon?"var(--grn)":"var(--red)";
       info.textContent = myDisc ? (iWon?"🏆 YOU WIN":"you lose") : ((m.winnerId===duel[0]?names[0]:names[1])+" wins");
       sub.textContent="new game shortly…"; return; }

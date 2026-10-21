@@ -29,7 +29,7 @@ mount(stage, ctx){
     {q:"What's the capital of Japan?",o:["Seoul","Beijing","Tokyo","Bangkok"],a:2}
   ];
   let players=[], mySeat=-1, amHost=false, phase="wait", myAnswer=-1, scores=[];
-  let hScores={}, round=0, correct=-1, answered={}, timers=[];
+  let hScores={}, round=0, correct=-1, answered={}, timers=[], hostId=0;
   const T=(fn,ms)=>{ const id=setTimeout(fn,ms); timers.push(id); return id; };
   const clearT=()=>{ timers.forEach(clearTimeout); timers=[]; };
 
@@ -75,11 +75,13 @@ mount(stage, ctx){
 
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id); amHost=(mySeat===0);
-      if(amHost && players.length>=2 && phase==="wait"){ hostStart(); }
-      else if(players.length<2){ phase="wait"; info.textContent="waiting for players…"; qEl.textContent="🧠"; opts.innerHTML=""; board.textContent=""; }
+      const h=players.length>=2?players[0].id:0;
+      if(h!==hostId){ hostId=h; clearT(); phase="wait"; opts.innerHTML=""; board.textContent=""; qEl.textContent="🧠";   // host changed (left, or first start): seat0 runs a fresh quiz
+        if(!h) info.textContent="waiting for players…"; else if(amHost) hostStart(); else info.textContent="next question coming up…"; }
       return; }
+    if(m.ev==="ans"){ if(amHost) hostRecord(m.from,m.a); return; }
+    if(m.from!==hostId) return;                     // q/reveal/done only count from the current host
     if(m.ev==="q"){ info.textContent="Q"+m.n+"/"+m.total; showQ(m.q,m.o); }
-    else if(m.ev==="ans"){ if(amHost) hostRecord(m.from,m.a); }
     else if(m.ev==="reveal"){ showReveal(m.correct,m.scores||[]); }
     else if(m.ev==="done"){ showDone(m.scores||[]); }
   });

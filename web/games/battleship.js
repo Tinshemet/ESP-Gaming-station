@@ -3,7 +3,7 @@ CAB.register({ id:"battleship", name:"Battleship", icon:"🚢", kind:"mp", pill:
   desc:"sink their fleet. tap the grid to fire.",
 mount(stage, ctx){
   const N=7, SHIPS=[4,3,2];
-  let players=[], mySeat=-1, phase="wait", myTurn=false, iReady=false, oppReady=false, over=false;
+  let players=[], mySeat=-1, phase="wait", myTurn=false, iReady=false, oppReady=false, over=false, pair="";
   let my=Array(N*N).fill(0);   // 0 empty,1 ship,2 hit,3 miss(on me)
   let shots=Array(N*N).fill(0);// tracking of my fire: 0 unknown,1 hit,2 miss
   const seated=()=>mySeat===0||mySeat===1;
@@ -45,7 +45,10 @@ mount(stage, ctx){
   function fire(i){ if(!myTurn||over||shots[i]) return; myTurn=false; ctx.net.send({ev:"fire",i:i}); render(); }
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id);
-      if(seated()&&phase==="wait"&&players.length>=2){ phase="place"; if(my.every(x=>!x)) placeRandom(); }
+      const now=players.length>=2?players[0].id+"-"+players[1].id:"";
+      if(now!==pair){ pair=now;   // new pairing -> both sides re-place and ready up again
+        phase = (now && seated()) ? "place" : "wait"; myTurn=false; iReady=false; oppReady=false; over=false;
+        shots=Array(N*N).fill(0); if(phase==="place") placeRandom(); }
       render(); return; }
     if(!seated()) return;                 // spectators ignore game traffic
     if(m.ev==="ready"){ if(m.from===oppId()){ oppReady=true; maybeStart(); render(); } }

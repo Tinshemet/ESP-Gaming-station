@@ -3,7 +3,7 @@ CAB.register({ id:"speedmath", name:"Speed Math", icon:"➗", kind:"mp", pill:"p
   desc:"first to tap the right answer scores. brains + thumbs.",
 mount(stage, ctx){
   let players=[], mySeat=-1, amHost=false, phase="wait", locked=false, scores=[];
-  let hScores={}, correctIdx=-1, roundWon=false, timers=[];
+  let hScores={}, correctIdx=-1, roundWon=false, timers=[], hostId=0;
   const T=(fn,ms)=>{ const id=setTimeout(fn,ms); timers.push(id); return id; };
   const clearT=()=>{ timers.forEach(clearTimeout); timers=[]; };
 
@@ -47,11 +47,13 @@ mount(stage, ctx){
 
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id); amHost=(mySeat===0);
-      if(amHost && players.length>=2 && phase==="wait") hostStart();
-      else if(players.length<2){ phase="wait"; info.textContent="waiting for players…"; qEl.textContent="➗"; opts.innerHTML=""; board.textContent=""; }
+      const h=players.length>=2?players[0].id:0;
+      if(h!==hostId){ hostId=h; clearT(); phase="wait"; opts.innerHTML=""; board.textContent=""; qEl.textContent="➗";   // host changed (left, or first start): seat0 runs a fresh game
+        if(!h) info.textContent="waiting for players…"; else if(amHost) hostStart(); else info.textContent="next problem coming up…"; }
       return; }
+    if(m.ev==="ans"){ if(amHost) hostRecord(m.from,m.a); return; }
+    if(m.from!==hostId) return;                     // q/win only count from the current host
     if(m.ev==="q"){ info.textContent="first correct wins!"; showQ(m.text,m.o); }
-    else if(m.ev==="ans"){ if(amHost) hostRecord(m.from,m.a); }
     else if(m.ev==="win"){ showWin(m.ci,m.winnerId,m.winnerName,m.scores||[]); }
   });
   info.textContent="connecting…"; qEl.textContent="➗";

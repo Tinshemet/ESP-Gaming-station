@@ -10,7 +10,7 @@ const WELCOME_DEFAULT =
 
 const CAB = window.CAB = {
   games:{}, order:[],
-  me:{id:null, name:"", admin:false},
+  me:{id:null, name:"", want:"", admin:false},   // want = the handle they typed; name = what the server granted
   ws:null, connected:false,
   presence:[], chat:[], unread:0, leaders:[], vwins:[],
   tab:"solo", host:null, netHandler:null, curGame:null,
@@ -49,7 +49,7 @@ CAB.register=function(g){ if(!CAB.games[g.id]){ CAB.order.push(g.id);} CAB.games
 /* ---------- boot / landing ---------- */
 CAB.boot=function(){
   document.body.classList.add("crt");
-  CAB.me.name = load("name") || "";
+  CAB.me.name = CAB.me.want = load("name") || "";
   landing();
 };
 
@@ -58,7 +58,7 @@ function landing(){
   const input=el("input",{class:"name-in",maxlength:16,placeholder:"pick a handle",value:CAB.me.name});
   const go=()=>{
     const n=(input.value||"").trim().slice(0,16) || ("guest"+Math.floor(Math.random()*900+100));
-    CAB.me.name=n; save("name",n); connect(); lobby();
+    CAB.me.name=CAB.me.want=n; save("name",n); connect(); lobby();
   };
   input.addEventListener("keydown",e=>{ if(e.key==="Enter") go(); });
   const lines=CAB.welcome.split("\n");
@@ -74,13 +74,18 @@ function landing(){
 }
 
 /* ---------- WebSocket ---------- */
+let retries=0;
+const retryMs=()=>Math.min(8000, 1000*Math.pow(2, retries++));   // 1,2,4,8 s: a full cabinet isn't hammered
 function connect(){
   if(CAB.ws && (CAB.ws.readyState===0||CAB.ws.readyState===1)) return;
   let ws;
-  try{ ws=new WebSocket("ws://"+location.hostname+":81/"); }catch(e){ setTimeout(connect,1500); return; }
+  try{ ws=new WebSocket("ws://"+location.hostname+":81/"); }catch(e){ setTimeout(connect,retryMs()); return; }
   CAB.ws=ws;
-  ws.onopen=()=>{ CAB.connected=true; send({t:"hello",name:CAB.me.name}); syncBar(); };
-  ws.onclose=()=>{ CAB.connected=false; syncBar(); setTimeout(connect,1500); };
+  ws.onopen=()=>{ CAB.connected=true; retries=0; send({t:"hello",name:CAB.me.want||CAB.me.name,prev:CAB.me.id||0});   // prev: cabinet cuts our old socket, we keep our place
+    // a dropped socket (screen lock, wifi blip) comes back as a fresh player with no room: rejoin the open game
+    if(CAB.curGame && CAB.games[CAB.curGame].kind==="mp") send({t:"join",game:CAB.curGame});
+    syncBar(); };
+  ws.onclose=()=>{ CAB.connected=false; syncBar(); setTimeout(connect,retryMs()); };
   ws.onerror=()=>{ try{ws.close();}catch(e){} };
   ws.onmessage=ev=>{ let m; try{ m=JSON.parse(ev.data);}catch(e){ return; } dispatch(m); };
 }
@@ -90,9 +95,9 @@ CAB.send=send;
 function dispatch(m){
   switch(m.t){
     case "welcome": CAB.me.id=m.id;
-      if(m.name){ if(m.name!==CAB.me.name){ toast("that name was taken — you're now “"+m.name+"”"); } CAB.me.name=m.name; save("name",m.name); syncBar(); }
+      if(m.name){ if(m.name!==CAB.me.name && m.name!==CAB.me.want){ toast("that name was taken — you're now “"+m.name+"”"); } CAB.me.name=m.name; syncBar(); }
       if(m.welcome){CAB.welcome=m.welcome;} break;
-    case "presence": CAB.presence=m.users||[]; syncBar(); if(CAB.tab==="admin"||CAB.tab==="versus") renderView(); if(CAB.host) refreshRoomBadge(); break;
+    case "presence": CAB.presence=m.users||[]; syncBar(); if(CAB.host) refreshRoomBadge(); else if(CAB.tab==="admin"||CAB.tab==="versus") renderView(); break;   // lobby is hidden under a game
     case "chatlog": CAB.chat=m.items||[]; if(CAB.tab==="chat") renderView(); break;
     case "chat":
       CAB.chat.push(m); if(CAB.chat.length>120) CAB.chat.shift();
@@ -102,6 +107,7 @@ function dispatch(m){
       CAB.me.admin=!!m.ok; toast(m.ok?"admin unlocked":"wrong PIN"); if(CAB.tab==="admin") renderView(); break;
     case "leaders": CAB.leaders=m.items||[]; CAB.vwins=m.vwins||[]; if(CAB.tab==="board") renderView(); break;
     case "wipe": wipeLocal(); toast("all game progress reset by host"); if(CAB.host) closeGame(); if(CAB.tab!=="chat") renderView(); break;
+    case "ping": send({t:"pong"}); break;   // liveness: the cabinet drops phones that go silent for 25 s
     case "sys": toast(m.text); break;
     case "kicked": toast("removed by admin"); if(CAB.host) closeGame(); break;
     case "welcome_set": CAB.welcome=m.welcome; break;
@@ -191,6 +197,7 @@ function openGame(id){
     stage,
   ]);
   CAB.host=host; document.body.append(host);
+  app().style.display="none";   // nothing paints (pulsing cards etc.) under the opaque game overlay
 
   const ctx={
     me:CAB.me, isAdmin:()=>CAB.me.admin, toast, save, load, el,
@@ -215,6 +222,7 @@ function closeGame(silent){
   if(wasMp && !silent) send({t:"leave",game:CAB.curGame});
   CAB.cleanup=null; CAB.netHandler=null; CAB.curGame=null;
   CAB.host.remove(); CAB.host=null;
+  app().style.display=""; renderView();   // catch up on presence changes skipped while the game was open
 }
 function refreshRoomBadge(){
   const b=document.getElementById("roomb"); if(!b||!CAB.curGame) return;

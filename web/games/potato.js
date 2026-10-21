@@ -2,7 +2,7 @@
 CAB.register({ id:"potato", name:"Hot Potato", icon:"💣", kind:"mp", pill:"party · pass",
   desc:"pass the bomb before it blows. holder loses.",
 mount(stage, ctx){
-  let players=[], mySeat=-1, amHost=false, holderId=0, timers=[], fuseTimer=null;
+  let players=[], mySeat=-1, amHost=false, holderId=0, timers=[], fuseTimer=null, hostId=0;
   const T=(fn,ms)=>{ const id=setTimeout(fn,ms); timers.push(id); return id; };
   const clearT=()=>{ timers.forEach(clearTimeout); timers=[]; };
   let hFuseEnd=0;
@@ -39,15 +39,20 @@ mount(stage, ctx){
   function hostHold(){ ctx.net.send({ev:"hold",holderId:holderId,fuse:Math.max(0,hFuseEnd-Date.now())}); showHold(Math.max(0,hFuseEnd-Date.now())); }
   function hostPass(fromId){ if(!amHost||fromId!==holderId)return; const others=players.filter(p=>p.id!==holderId);
     if(!others.length) return; holderId=others[(Math.random()*others.length)|0].id; hostHold(); }
-  function hostBoom(){ if(!amHost)return; ctx.net.send({ev:"boom",loserId:holderId}); showBoom(holderId); T(hostStart,4500); }
+  function hostBoom(){ if(!amHost)return; ctx.net.send({ev:"boom",loserId:holderId}); showBoom(holderId); holderId=0; T(hostStart,4500); }   // no live bomb between rounds
 
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id); amHost=(mySeat===0);
-      if(players.length<2){ stopFuse(); big.textContent="💣"; big.style.color="var(--dim)"; sub.textContent="waiting for players… ("+(m.have||0)+" in)"; passBtn.style.display="none"; bar.style.width="100%"; scr.style.background="#0e141c"; }
-      else if(amHost && holderId===0){ hostStart(); }
+      const h=players.length>=2?players[0].id:0;
+      if(!h){ hostId=0; clearT(); holderId=0; stopFuse(); big.textContent="💣"; big.style.color="var(--dim)"; sub.textContent="waiting for players… ("+(m.have||0)+" in)"; passBtn.style.display="none"; bar.style.width="100%"; scr.style.background="#0e141c"; }
+      else if(h!==hostId){ hostId=h; clearT(); holderId=0;   // host changed (left, or first start): seat0 deals a fresh bomb
+        if(amHost) hostStart(); else { stopFuse(); big.textContent="💣"; big.style.color="var(--ink)"; sub.textContent="next round starting…"; passBtn.style.display="none"; scr.style.background="#0e141c"; } }
+      else if(amHost && holderId && !players.some(p=>p.id===holderId)){   // holder walked off with it: hand it on, same fuse
+        holderId=players[(Math.random()*players.length)|0].id; hostHold(); }
       return; }
-    if(m.ev==="hold"){ holderId=m.holderId; showHold(m.fuse||10000); }
-    else if(m.ev==="pass"){ if(amHost) hostPass(m.from); }
+    if(m.ev==="pass"){ if(amHost) hostPass(m.from); return; }
+    if(m.from!==hostId) return;                     // hold/boom only count from the current host
+    if(m.ev==="hold"){ holderId=m.holderId; showHold(m.fuse!=null?m.fuse:10000); }
     else if(m.ev==="boom"){ showBoom(m.loserId); }
   });
   big.textContent="💣"; sub.textContent="connecting…";

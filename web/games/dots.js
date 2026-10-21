@@ -3,7 +3,7 @@ CAB.register({ id:"dots", name:"Dots & Boxes", icon:"🔵", kind:"mp", pill:"1v1
   desc:"claim edges, close boxes, own the grid.",
 mount(stage, ctx){
   const R=3, C=3, GY=2*R+1, GX=2*C+1;
-  let players=[], mySeat=-1, turn=0, claimed={}, owner={}, scores=[0,0], over=false, started=false, reported=false;
+  let players=[], mySeat=-1, turn=0, claimed={}, owner={}, scores=[0,0], over=false, pair="", reported=false;
   const key=(y,x)=>y+","+x;
   const wrap=ctx.el("div",{style:"flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:14px;width:100%"});
   const info=ctx.el("div",{class:"hud",style:"font-size:15px"});
@@ -55,9 +55,13 @@ mount(stage, ctx){
   btn.addEventListener("click",newGame);
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id);
-      if(mySeat===0 && players.length>=2 && !started){ started=true; reset(); ctx.net.send({ev:"reset"}); } render(); }
-    else if(m.ev==="edge"){ apply(m.y,m.x,m.seat); started=true; render(); }
-    else if(m.ev==="reset"){ reset(); started=true; render(); }
+      const now=players.length>=2?players[0].id+"-"+players[1].id:"";
+      if(now!==pair){ pair=now; reset(); if(now && mySeat===0) ctx.net.send({ev:"reset"}); }   // new pairing -> fresh grid
+      else if(now && mySeat===0) ctx.net.send({ev:"sync",claimed:claimed,owner:owner,scores:scores,turn:turn,over:over});   // late spectator
+      render(); }
+    else if(m.ev==="edge"){ apply(m.y,m.x,m.seat); render(); }
+    else if(m.ev==="reset"){ reset(); render(); }
+    else if(m.ev==="sync" && (mySeat<0||mySeat>1)){ claimed=m.claimed||{}; owner=m.owner||{}; scores=m.scores||[0,0]; turn=m.turn||0; over=!!m.over; render(); }
   });
   render();
   return ()=>{};

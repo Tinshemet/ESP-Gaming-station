@@ -2,7 +2,7 @@
 CAB.register({ id:"ttt", name:"Tic-Tac-Toe", icon:"⭕", kind:"mp", pill:"1v1",
   desc:"three in a row. quick grudge match.",
 mount(stage, ctx){
-  let players=[], mySeat=-1, board=Array(9).fill(""), turn=0, winner=null, started=false, reported=false;
+  let players=[], mySeat=-1, board=Array(9).fill(""), turn=0, winner=null, pair="", reported=false;
   const wrap=ctx.el("div",{style:"flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:14px;width:100%"});
   const info=ctx.el("div",{class:"hud",style:"font-size:15px"});
   const grid=ctx.el("div",{style:"display:grid;grid-template-columns:repeat(3,1fr);gap:6px;width:min(86vw,320px)"});
@@ -33,8 +33,12 @@ mount(stage, ctx){
   btn.addEventListener("click",newGame);
   ctx.net.on(m=>{
     if(m.ev==="seats"){ players=m.players||[]; mySeat=players.findIndex(p=>p.id===ctx.me.id);
-      if(players.length>=2 && mySeat===0 && !started){ started=true; newGame(); } else render(); }
-    else if(m.ev==="state"){ board=m.board||board; turn=m.turn||0; winner=m.winner||null; started=true; render(); }
+      const now=players.length>=2?players[0].id+"-"+players[1].id:"";
+      if(now!==pair){ pair=now; board=Array(9).fill(""); turn=0; winner=null; reported=false;   // new pairing -> fresh game
+        if(now && mySeat===0) newGame(); else render(); }
+      else { if(now && mySeat===0) ctx.net.send({ev:"sync",board:board,turn:turn,winner:winner}); render(); } }   // late spectator: show the board so far
+    else if(m.ev==="state"){ board=m.board||board; turn=m.turn||0; winner=m.winner||null; if(!winner) reported=false; render(); }   // opponent's rematch re-arms the win report
+    else if(m.ev==="sync" && (mySeat<0||mySeat>1)){ board=m.board||board; turn=m.turn||0; winner=m.winner||null; render(); }
   });
   render();
   return ()=>{};

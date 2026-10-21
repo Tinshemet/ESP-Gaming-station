@@ -17,7 +17,7 @@ mount(stage, ctx){
       bg(iWon?"#0a3":"#0e141c"); big.style.color=iWon?"#cffce0":"var(--cyn)";
       big.textContent=iWon?"YOU WON 🏆":((m.winnerName||"someone")+" won"); sub.textContent="next round shortly…"; }
   });
-  function fire(){ if(!jumped && (phase==="go" || phase==="set")) ctx.net.send({ev:"tap"}); }
+  function fire(){ if(jumped || (phase!=="go" && phase!=="set")) return; if(phase==="set") jumped=true; ctx.net.send({ev:"tap"}); }   // a flinch counts at once: extra taps can't land after GO
   scr.addEventListener("touchstart",e=>{ e.preventDefault(); fire(); },{passive:false});
   scr.addEventListener("mousedown",fire);
   const key=e=>{ if(e.key===" "||e.key==="Enter") fire(); };
